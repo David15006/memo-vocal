@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Notes vocales</title>
+<style>
+  :root { --accent:#1a3a6b; --rouge:#d93025; --vert:#1e8e3e; --gris:#5f6368; --fond:#f1f3f4; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--fond); color:#202124;
+         padding-bottom:calc(150px + env(safe-area-inset-bottom)); }
+  header { background:var(--accent); color:#fff; padding:calc(14px + env(safe-area-inset-top)) 16px 14px; position:sticky; top:0; z-index:5; box-shadow:0 2px 6px rgba(0,0,0,.25); }
+  header { display:flex; justify-content:space-between; align-items:center; gap:10px; }
+  header h1 { margin:0; font-size:20px; }
+  #ecrire { border:1px solid rgba(255,255,255,.6); background:transparent; color:#fff; border-radius:10px; padding:8px 10px; font-size:13px; font-weight:600; max-width:140px; line-height:1.2; }
+  header p { margin:2px 0 0; font-size:13px; opacity:.85; }
+  main { padding:12px; }
+  .carte { background:#fff; border-radius:16px; padding:12px 14px; margin-bottom:10px; box-shadow:0 1px 4px rgba(0,0,0,.12); }
+  .carte .tete { display:flex; justify-content:space-between; align-items:center; font-size:13px; color:var(--gris); margin-bottom:6px; font-weight:600; }
+  .carte textarea { width:100%; border:0; resize:none; font:inherit; font-size:17px; line-height:1.4; background:transparent; outline:none; overflow:hidden; padding:0; }
+  .carte textarea:focus { background:#f8f9fa; }
+  .suppr { border:0; background:transparent; color:var(--rouge); font-size:20px; padding:4px 8px; }
+  .live { border:2px solid var(--rouge); }
+  .live .txt { font-size:17px; line-height:1.4; min-height:24px; }
+  .live .txt i { color:var(--gris); }
+  .jour { margin:16px 4px 8px; font-size:13px; font-weight:700; color:var(--gris); text-transform:uppercase; letter-spacing:.04em; }
+  .vide { text-align:center; color:var(--gris); padding:40px 20px; line-height:1.5; }
+  .aide { font-size:12px; color:var(--gris); text-align:center; padding:6px 16px 0; line-height:1.4; }
+  footer { position:fixed; left:0; right:0; bottom:0; background:#fff; box-shadow:0 -2px 8px rgba(0,0,0,.18); padding:10px 12px calc(10px + env(safe-area-inset-bottom)); }
+  .barre { display:flex; align-items:center; gap:12px; }
+  #mic { flex:0 0 auto; width:84px; height:84px; border-radius:50%; border:0; background:var(--accent); color:#fff; display:flex; align-items:center; justify-content:center; box-shadow:0 3px 10px rgba(0,0,0,.35); margin-top:-34px; transition:background .2s; }
+  #mic svg { width:38px; height:38px; fill:#fff; }
+  #mic.on { background:var(--rouge); animation:pulse 1.4s infinite; }
+  @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(217,48,37,.55)} 70%{box-shadow:0 0 0 22px rgba(217,48,37,0)} 100%{box-shadow:0 0 0 0 rgba(217,48,37,0)} }
+  .actions { flex:1; display:flex; gap:8px; }
+  .actions button { flex:1; padding:14px 6px; font-size:15px; font-weight:700; border:0; border-radius:12px; color:#fff; }
+  #envoyer { background:var(--vert); } #copier { background:var(--gris); }
+  .actions button:disabled { background:#bdc1c6; }
+  #effacer { position:absolute; right:14px; top:-26px; border:0; background:transparent; color:var(--gris); font-size:12px; text-decoration:underline; padding:4px; }
+  #msg { position:fixed; left:12px; right:12px; bottom:calc(130px + env(safe-area-inset-bottom)); background:#202124; color:#fff; padding:14px; border-radius:10px; font-size:15px; display:none; z-index:30; text-align:center; }
+</style>
+</head>
+<body>
+
+<header>
+  <div><h1>Notes vocales</h1>
+  <p id="sous">Touchez le micro et parlez</p></div>
+  <button id="ecrire">✍ Écrire / dicter au clavier</button>
+</header>
+
+<main id="liste"></main>
+<div class="aide">Dites « à la ligne », « virgule », « point d'interrogation », « point d'exclamation » ou « point final » pour la mise en forme.</div>
+
+<footer>
+  <button id="effacer">Tout effacer</button>
+  <div class="barre">
+    <button id="mic" aria-label="Micro"><svg viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg></button>
+    <div class="actions">
+      <button id="envoyer" disabled>Envoyer (.md)</button>
+      <button id="copier" disabled>Copier</button>
+    </div>
+  </div>
+</footer>
+<div id="msg"></div>
+
+<script>
+const LANGUE = 'fr-FR';
+const CLE = 'notes-vocales-v1';
+const $ = id => document.getElementById(id);
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+let notes = [];
+try { notes = JSON.parse(localStorage.getItem(CLE) || '[]'); } catch(e){}
+const sauver = () => { try { localStorage.setItem(CLE, JSON.stringify(notes)); } catch(e){ info('Sauvegarde impossible (stockage plein ?)'); } };
+
+const p2 = n => String(n).padStart(2,'0');
+const heure = t => { const d = new Date(t); return `${p2(d.getHours())}:${p2(d.getMinutes())}`; };
+const cleJour = t => { const d = new Date(t); return `${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`; };
+const libJour = t => { const s = new Date(t).toLocaleDateString('fr-BE', { weekday:'long', day:'numeric', month:'long', year:'numeric' }); return s.charAt(0).toUpperCase() + s.slice(1); };
+
+function info(t){ const m=$('msg'); m.textContent=t; m.style.display='block'; clearTimeout(info.t); info.t=setTimeout(()=>m.style.display='none',5000); }
+
+/* ---------- Mise en forme de la dictée ---------- */
+function traiter(t){
+  t = ' ' + t + ' ';
+  const regles = [
+    [/\s+(à la ligne|nouvelle ligne)(?=\s)/gi, '\n'],
+    [/\s+point d['’]interrogation(?=\s)/gi, '?'],
+    [/\s+point d['’]exclamation(?=\s)/gi, '!'],
+    [/\s+deux points(?=\s)/gi, ':'],
+    [/\s+point final(?=\s)/gi, '.'],
+    [/\s+virgule(?=\s)/gi, ',']
+  ];
+  for (let i = 0; i < 2; i++) regles.forEach(([re, r]) => { t = t.replace(re, r); });
+  t = t.replace(/([,.?!:])(?=[^\s])/g, '$1 ').replace(/[ \t]+\n/g, '\n').replace(/\n[ \t]+/g, '\n').trim();
+  return t.replace(/(^|[.?!]\s+|\n)([a-zà-ÿ])/g, (m, a, b) => a + b.toUpperCase());
+}
+
+/* ---------- Affichage ---------- */
+let ecoute = false, finalTxt = '', interim = '';
+
+function rendre(){
+  const L = $('liste'); L.innerHTML = '';
+  if (ecoute){
+    const c = document.createElement('div'); c.className = 'carte live';
+    c.innerHTML = '<div class="tete"><span>● Enregistrement…</span></div><div class="txt" id="liveTxt"></div>';
+    L.appendChild(c); majLive();
+  }
+  if (!notes.length && !ecoute){
+    L.innerHTML = '<div class="vide">Aucune note pour l\'instant.<br>Touchez le micro, parlez, puis retouchez-le pour terminer.</div>';
+  }
+  let dernier = '';
+  [...notes].reverse().forEach(n => {
+    const j = cleJour(n.t);
+    if (j !== dernier){ dernier = j; const h = document.createElement('div'); h.className = 'jour'; h.textContent = libJour(n.t); L.appendChild(h); }
+    const c = document.createElement('div'); c.className = 'carte';
+    c.innerHTML = `<div class="tete"><span>${heure(n.t)}</span><button class="suppr" aria-label="Supprimer">🗑</button></div><textarea rows="1"></textarea>`;
+    const ta = c.querySelector('textarea'); ta.value = n.txt;
+    const ajuster = () => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; };
+    ta.addEventListener('input', () => { n.txt = ta.value; ajuster(); sauver(); });
+    c.querySelector('.suppr').onclick = () => { if (confirm('Supprimer cette note ?')){ notes = notes.filter(x => x !== n); sauver(); rendre(); } };
+    L.appendChild(c); ajuster();
+  });
+  $('envoyer').disabled = $('copier').disabled = !notes.length;
+  $('effacer').style.display = notes.length ? '' : 'none';
+  $('mic').classList.toggle('on', ecoute);
+  $('sous').textContent = ecoute ? 'Parlez… touchez le micro pour terminer' : (notes.length ? notes.length + ' note(s)' : 'Touchez le micro et parlez');
+}
+function majLive(){
+  const e = $('liveTxt'); if (!e) return;
+  e.innerHTML = '';
+  e.append(document.createTextNode(finalTxt + (finalTxt && interim ? ' ' : '')));
+  if (interim){ const i = document.createElement('i'); i.textContent = interim; e.appendChild(i); }
+  if (!finalTxt && !interim) e.innerHTML = '<i>J\'écoute…</i>';
+}
+
+/* ---------- Reconnaissance vocale ---------- */
+let rec = null, verrou = null;
+
+async function garderEcran(){ try { if (navigator.wakeLock) verrou = await navigator.wakeLock.request('screen'); } catch(e){} }
+function libererEcran(){ try { if (verrou) verrou.release(); } catch(e){} verrou = null; }
+
+async function demarrer(){
+  if (!SR){ info('Dictée non supportée ici : ouvrez le fichier avec Chrome sur Android.'); return; }
+  // Demande explicite d'autorisation du micro (affiche la fenêtre d'autorisation de Chrome si elle est possible)
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia){
+    try { (await navigator.mediaDevices.getUserMedia({ audio:true })).getTracks().forEach(t => t.stop()); }
+    catch(e){ info('Autorisation du micro refusée ou impossible depuis ce fichier. Utilisez « Écrire / dicter au clavier ».'); return; }
+  }
+  rec = new SR();
+  rec.lang = LANGUE; rec.continuous = false; rec.interimResults = true;
+  rec.onresult = e => {
+    let inter = '';
+    for (let i = e.resultIndex; i < e.results.length; i++){
+      const r = e.results[i];
+      if (r.isFinal) finalTxt += (finalTxt ? ' ' : '') + r[0].transcript.trim();
+      else inter += r[0].transcript;
+    }
+    interim = inter; majLive();
+  };
+  rec.onerror = e => {
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed'){ ecoute = false; info(location.protocol === 'file:' ? 'Chrome bloque le micro pour un fichier local. Utilisez « Écrire / dicter au clavier » (micro du clavier) ou hébergez la page en https.' : 'Micro refusé : autorisez-le dans les réglages du site.'); }
+    else if (e.error === 'network'){ info('Connexion internet requise pour la dictée.'); }
+  };
+  rec.onend = () => {
+    if (ecoute){ try { rec.start(); } catch(e){} return; }   // redémarre automatiquement tant qu'on n'a pas arrêté
+    finaliser();
+  };
+  finalTxt = ''; interim = ''; ecoute = true;
+  try { rec.start(); } catch(e){}
+  garderEcran(); rendre();
+}
+function arreter(){ ecoute = false; try { rec.stop(); } catch(e){ finaliser(); } }
+function finaliser(){
+  libererEcran();
+  const txt = traiter((finalTxt + ' ' + interim).trim());
+  finalTxt = ''; interim = '';
+  if (txt) { notes.push({ t:Date.now(), txt }); sauver(); }
+  rendre();
+}
+$('mic').onclick = () => ecoute ? arreter() : demarrer();
+$('ecrire').onclick = () => {
+  if (ecoute) arreter();
+  notes.push({ t:Date.now(), txt:'' }); sauver(); rendre();
+  const ta = document.querySelector('.carte textarea'); if (ta) ta.focus();   // le clavier s'ouvre : touchez son micro pour dicter
+};
+
+/* ---------- Export Markdown ---------- */
+function versMarkdown(){
+  const jours = {};
+  notes.filter(n => n.txt.trim()).sort((a,b) => a.t - b.t).forEach(n => (jours[cleJour(n.t)] = jours[cleJour(n.t)] || []).push(n));
+  return Object.keys(jours).sort().map(j => {
+    const liste = jours[j];
+    return `# Notes vocales — ${libJour(liste[0].t)}\n\n` + liste.map(n => `## ${heure(n.t)}\n\n${n.txt.trim()}\n`).join('\n');
+  }).join('\n') ;
+}
+function nomFichier(){ return `notes-vocales_${cleJour(Date.now())}.md`; }
+
+$('envoyer').onclick = async () => {
+  const md = versMarkdown(), nom = nomFichier();
+  const file = new File([md], nom, { type:'text/markdown' });
+  try {
+    if (navigator.canShare && navigator.canShare({ files:[file] })){
+      await navigator.share({ files:[file], title:'Notes vocales' }); return;
+    }
+    if (navigator.share){                       // plan B : partage du texte lui-même
+      await navigator.share({ title:'Notes vocales', text:md });
+      info('Envoyé sous forme de texte (fichier non supporté ici).'); return;
+    }
+  } catch(err){ if (err && err.name === 'AbortError') return; }
+  const a = document.createElement('a');         // plan C : téléchargement
+  a.href = URL.createObjectURL(file); a.download = nom;
+  document.body.appendChild(a); a.click(); a.remove();
+  info('Fichier enregistré dans les téléchargements : ' + nom);
+};
+$('copier').onclick = async () => {
+  try { await navigator.clipboard.writeText(versMarkdown()); info('Copié ✔ — collez-le où vous voulez'); }
+  catch(e){ info('Copie impossible ici : utilisez Envoyer.'); }
+};
+$('effacer').onclick = () => {
+  if (confirm('Effacer TOUTES les notes ? Pensez à les avoir envoyées avant.')){ notes = []; sauver(); rendre(); }
+};
+
+document.addEventListener('visibilitychange', () => { if (!document.hidden && ecoute) garderEcran(); });
+rendre();
+</script>
+</body>
+</html>
